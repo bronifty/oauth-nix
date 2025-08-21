@@ -1,0 +1,57 @@
+{
+  "servers": {
+    "client": {
+      "host": "localhost",
+      "port": 9000,
+      "baseUrl": "http://localhost:9000",
+      "viewPath": "files/client"
+    },
+    "server": {
+      "host": "localhost", 
+      "port": 9001,
+      "baseUrl": "http://localhost:9001",
+      "viewPath": "files/authorizationServer",
+      "endpoints": {
+        "authorization": "http://localhost:9001/authorize",
+        "token": "http://localhost:9001/token"
+      }
+    },
+    "api": {
+      "host": "localhost",
+      "port": 9002, 
+      "baseUrl": "http://localhost:9002",
+      "viewPath": "files/protectedResource",
+      "endpoints": {
+        "resource": "http://localhost:9002/resource"
+      }
+    }
+  },
+  "clients": [
+    {
+      "client_id": "oauth-client-1",
+      "client_secret": "oauth-client-secret-1", 
+      "client_name": "OAuth Client Application",
+      "redirect_uris": [
+        "http://localhost:9000/callback"
+      ],
+      "scope": "foo bar",
+      "grant_types": ["authorization_code"],
+      "response_types": ["code"]
+    }
+  ],
+  "resources": [
+    {
+      "name": "Protected Resource",
+      "description": "This data has been protected by OAuth 2.0",
+      "scopes": ["foo", "bar"]
+    }
+  ],
+  "security": {
+    "codeLength": 8,
+    "tokenLength": 32,
+    "stateLength": 16
+  },
+  "database": {
+    "path": "database.nosql"
+  }
+}

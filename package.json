@@ -1,0 +1,22 @@
+{
+  "dependencies": {
+    "body-parser": "^1.13.2",
+    "concurrently": "^9.2.0",
+    "consolidate": "^0.13.1",
+    "cors": "^2.7.1",
+    "express": "^4.13.1",
+    "nosql": "^3.0.3",
+    "qs": "^4.0.0",
+    "randomstring": "^1.0.7",
+    "sync-request": "^2.0.1",
+    "underscore": "^1.8.3",
+    "underscore.string": "^3.1.1"
+  },
+  "scripts": {
+    "debug": "DEBUG=express:* bunx concurrently \"bun --watch server.js\" \"bun --watch client.js\" \"bun --watch api.js\" --names \"SERVER,CLIENT,API\" --prefix-colors \"cyan,magenta,yellow\"",
+    "run-client": "bun --watch client.js",
+    "run-server": "bun --watch server.js",
+    "run-api": "bun --watch api.js",
+    "run-all": "bunx concurrently \"bun --watch server.js\" \"bun --watch client.js\" \"bun --watch api.js\""
+  }
+}

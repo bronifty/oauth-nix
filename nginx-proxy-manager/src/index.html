@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nginx Proxy Manager</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .app-container {
+            display: flex;
+            height: 100vh;
+            padding-top: 30px; /* Account for title bar */
+        }
+
+        .sidebar {
+            width: 250px;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-right: 1px solid rgba(255, 255, 255, 0.2);
+            padding: 20px 0;
+        }
+
+        .sidebar-item {
+            padding: 15px 20px;
+            cursor: pointer;
+            color: white;
+            transition: background-color 0.3s;
+            border: none;
+            background: none;
+            width: 100%;
+            text-align: left;
+            font-size: 14px;
+            font-weight: 500;
+        }
+
+        .sidebar-item:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .sidebar-item.active {
+            background: rgba(255, 255, 255, 0.2);
+            border-right: 3px solid #fff;
+        }
+
+        .main-content {
+            flex: 1;
+            background: white;
+            overflow-y: auto;
+            margin: 20px;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+
+        .content-section {
+            display: none;
+            padding: 30px;
+            animation: fadeIn 0.3s ease-in-out;
+        }
+
+        .content-section.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .section-title {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 8px;
+            color: #2c3e50;
+        }
+
+        .section-subtitle {
+            color: #7f8c8d;
+            margin-bottom: 30px;
+            font-size: 16px;
+        }
+
+        .status-card {
+            background: linear-gradient(135deg, #74b9ff, #0984e3);
+            color: white;
+            padding: 25px;
+            border-radius: 12px;
+            margin-bottom: 25px;
+            box-shadow: 0 4px 15px rgba(116, 185, 255, 0.3);
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #e74c3c;
+        }
+
+        .status-dot.running {
+            background: #00b894;
+            box-shadow: 0 0 10px rgba(0, 184, 148, 0.5);
+        }
+
+        .control-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 14px;
+            transition: all 0.3s;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #00b894, #00a085);
+            color: white;
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 184, 148, 0.4);
+        }
+
+        .btn-danger {
+            background: linear-gradient(135deg, #e74c3c, #c0392b);
+            color: white;
+        }
+
+        .btn-danger:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(231, 76, 60, 0.4);
+        }
+
+        .btn-secondary {
+            background: #ecf0f1;
+            color: #2c3e50;
+        }
+
+        .btn-secondary:hover:not(:disabled) {
+            background: #d5dbdb;
+            transform: translateY(-2px);
+        }
+
+        .mapping-form {
+            background: #f8f9fa;
+            border-radius: 12px;
+            padding: 25px;
+            margin-bottom: 25px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-row {
+            display: flex;
+            gap: 15px;
+            align-items: flex-end;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid #e9ecef;
+            margin-bottom: 15px;
+            transition: border-color 0.3s;
+        }
+
+        .form-row:hover {
+            border-color: #74b9ff;
+        }
+
+        .input-group {
+            flex: 1;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 600;
+            color: #2c3e50;
+            font-size: 14px;
+        }
+
+        .input-group input {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 14px;
+            transition: border-color 0.3s, box-shadow 0.3s;
+        }
+
+        .input-group input:focus {
+            outline: none;
+            border-color: #74b9ff;
+            box-shadow: 0 0 0 3px rgba(116, 185, 255, 0.1);
+        }
+
+        .btn-remove {
+            background: #e74c3c;
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 32px;
+            height: 32px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s;
+        }
+
+        .btn-remove:hover {
+            background: #c0392b;
+            transform: scale(1.1);
+        }
+
+        .btn-add {
+            background: linear-gradient(135deg, #00b894, #00a085);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            margin-bottom: 20px;
+            transition: all 0.3s;
+        }
+
+        .btn-add:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 184, 148, 0.4);
+        }
+
+        .mappings-list {
+            margin-top: 20px;
+        }
+
+        .mapping-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px;
+            background: white;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            border-left: 4px solid #74b9ff;
+        }
+
+        .mapping-info {
+            font-weight: 600;
+        }
+
+        .mapping-url {
+            color: #74b9ff;
+            font-size: 14px;
+            margin-top: 4px;
+        }
+
+        .alert {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-weight: 500;
+        }
+
+        .alert-success {
+            background: #d1fae5;
+            color: #065f46;
+            border-left: 4px solid #10b981;
+        }
+
+        .alert-error {
+            background: #fee2e2;
+            color: #991b1b;
+            border-left: 4px solid #ef4444;
+        }
+
+        .alert-info {
+            background: #dbeafe;
+            color: #1e40af;
+            border-left: 4px solid #3b82f6;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border: 2px solid #f3f3f3;
+            border-top: 2px solid #74b9ff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 8px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .help-text {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+            border-left: 4px solid #6c757d;
+        }
+
+        .help-text h4 {
+            color: #495057;
+            margin-bottom: 10px;
+        }
+
+        .help-text ul {
+            margin-left: 20px;
+            color: #6c757d;
+        }
+
+        .help-text li {
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <div class="sidebar">
+            <button class="sidebar-item active" data-section="dashboard">
+                🏠 Dashboard
+            </button>
+            <button class="sidebar-item" data-section="configuration">
+                ⚙️ Configuration
+            </button>
+            <button class="sidebar-item" data-section="hosts">
+                🌐 Hosts Management
+            </button>
+            <button class="sidebar-item" data-section="help">
+                ❓ Help
+            </button>
+        </div>
+
+        <div class="main-content">
+            <div id="dashboard" class="content-section active">
+                <h1 class="section-title">Dashboard</h1>
+                <p class="section-subtitle">Monitor and control your nginx development proxy</p>
+                
+                <div class="status-card">
+                    <div class="status-indicator">
+                        <div class="status-dot" id="statusDot"></div>
+                        <h3 id="statusText">Checking status...</h3>
+                    </div>
+                    <p id="statusDetails">Please wait while we check the nginx proxy status.</p>
+                    
+                    <div class="control-buttons">
+                        <button class="btn btn-primary" id="startBtn" disabled>
+                            <span class="loading" id="startLoading" style="display: none;"></span>
+                            Start Proxy
+                        </button>
+                        <button class="btn btn-danger" id="stopBtn" disabled>
+                            <span class="loading" id="stopLoading" style="display: none;"></span>
+                            Stop Proxy
+                        </button>
+                        <button class="btn btn-secondary" id="refreshBtn">
+                            🔄 Refresh
+                        </button>
+                    </div>
+                </div>
+
+                <div id="alertContainer"></div>
+
+                <div class="mappings-list">
+                    <h3>Current Mappings</h3>
+                    <div id="currentMappings">
+                        <p>Loading mappings...</p>
+                    </div>
+                </div>
+            </div>
+
+            <div id="configuration" class="content-section">
+                <h1 class="section-title">Configuration</h1>
+                <p class="section-subtitle">Configure your proxy mappings</p>
+                
+                <div id="configAlerts"></div>
+
+                <div class="mapping-form">
+                    <h3>Proxy Mappings</h3>
+                    <p>Add localhost port to domain name mappings for your development servers.</p>
+                    
+                    <button class="btn-add" id="addMappingBtn">+ Add Mapping</button>
+                    
+                    <div id="mappingsContainer">
+                        <!-- Dynamic mapping forms will be added here -->
+                    </div>
+                    
+                    <div class="control-buttons">
+                        <button class="btn btn-primary" id="saveConfigBtn">💾 Save Configuration</button>
+                        <button class="btn btn-secondary" id="resetConfigBtn">🔄 Reset to Defaults</button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="hosts" class="content-section">
+                <h1 class="section-title">Hosts Management</h1>
+                <p class="section-subtitle">Manage /etc/hosts file entries based on your configuration</p>
+                
+                <div id="hostsAlerts"></div>
+
+                <div class="mapping-form">
+                    <h3>Preview</h3>
+                    <p>These entries will be automatically generated from your domain mappings in the Configuration tab.</p>
+                    
+                    <div id="hostsPreview">
+                        <p>Loading preview...</p>
+                    </div>
+                    
+                    <h3>Actions</h3>
+                    <p>These operations will modify your /etc/hosts file and require administrator privileges.</p>
+                    
+                    <div class="control-buttons">
+                        <button class="btn btn-primary" id="addHostsBtn">📝 Update /etc/hosts</button>
+                        <button class="btn btn-danger" id="removeHostsBtn">🗑️ Remove from /etc/hosts</button>
+                        <button class="btn btn-secondary" id="writeConfigBtn">⚙️ Write Nginx Config</button>
+                    </div>
+                </div>
+
+                <div class="help-text">
+                    <h4>About Hosts File</h4>
+                    <p>The hosts file maps domain names to IP addresses. By adding entries like:</p>
+                    <ul>
+                        <li><code>127.0.0.1 client</code></li>
+                        <li><code>127.0.0.1 server</code></li>
+                        <li><code>127.0.0.1 api</code></li>
+                    </ul>
+                    <p>You can access your local services using friendly URLs like <code>http://client</code> instead of <code>http://localhost:9000</code>.</p>
+                </div>
+            </div>
+
+            <div id="help" class="content-section">
+                <h1 class="section-title">Help & Documentation</h1>
+                <p class="section-subtitle">Learn how to use Nginx Proxy Manager</p>
+                
+                <div class="help-text">
+                    <h4>Getting Started</h4>
+                    <ol>
+                        <li><strong>Configure Mappings:</strong> Go to Configuration tab and set up your port-to-domain mappings</li>
+                        <li><strong>Update Hosts:</strong> Use the Hosts Management tab to add entries to your /etc/hosts file</li>
+                        <li><strong>Start Proxy:</strong> Return to Dashboard and click "Start Proxy"</li>
+                        <li><strong>Test:</strong> Open your browser and navigate to your configured domains (e.g., http://client)</li>
+                    </ol>
+                </div>
+
+                <div class="help-text">
+                    <h4>Requirements</h4>
+                    <ul>
+                        <li>macOS or Linux system</li>
+                        <li>Nix package manager installed</li>
+                        <li>Administrator privileges (for hosts file modification)</li>
+                        <li>Port 80 available (nginx will bind to this port)</li>
+                    </ul>
+                </div>
+
+                <div class="help-text">
+                    <h4>Troubleshooting</h4>
+                    <ul>
+                        <li><strong>Permission denied:</strong> Make sure to run with administrator privileges</li>
+                        <li><strong>Port 80 busy:</strong> Stop any other web servers using port 80</li>
+                        <li><strong>Domain not resolving:</strong> Check that hosts entries were added correctly</li>
+                        <li><strong>Nix not found:</strong> Ensure Nix is installed and in your PATH</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="renderer.js"></script>
+</body>
+</html>

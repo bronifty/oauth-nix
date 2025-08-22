@@ -28,11 +28,11 @@ const elements = {
     configAlerts: document.getElementById('configAlerts'),
     
     // Hosts management
-    addHostsBtn: document.getElementById('addHostsBtn'),
-    removeHostsBtn: document.getElementById('removeHostsBtn'),
-    writeConfigBtn: document.getElementById('writeConfigBtn'),
+    viewHostsBtn: document.getElementById('viewHostsBtn'),
     hostsPreview: document.getElementById('hostsPreview'),
     hostsAlerts: document.getElementById('hostsAlerts'),
+    hostsFileContent: document.getElementById('hostsFileContent'),
+    hostsFileText: document.getElementById('hostsFileText'),
     
     // Sudoers management
     setupSudoersBtn: document.getElementById('setupSudoersBtn'),
@@ -338,9 +338,6 @@ async function stopProxy() {
 function updateHostsPreview() {
     if (currentConfig.mappings.length === 0) {
         elements.hostsPreview.innerHTML = '<p>No domain mappings configured. Go to Configuration tab to add mappings.</p>';
-        elements.addHostsBtn.disabled = true;
-        elements.removeHostsBtn.disabled = true;
-        elements.writeConfigBtn.disabled = true;
         return;
     }
     
@@ -350,95 +347,37 @@ function updateHostsPreview() {
         .join('\n');
     
     elements.hostsPreview.innerHTML = `
-        <h4>Hosts entries to be added/managed:</h4>
+        <h4>Hosts entries that will be automatically managed:</h4>
         <pre style="background: #f8f9fa; padding: 15px; border-radius: 6px; border-left: 4px solid #74b9ff;"># Local development servers (nginx-proxy-manager)
 ${hostsEntries}</pre>
-        <p><small><strong>Location:</strong> /etc/hosts</small></p>
+        <p><small><strong>Note:</strong> These entries are automatically updated when you save your configuration.</small></p>
     `;
-    
-    elements.addHostsBtn.disabled = false;
-    elements.removeHostsBtn.disabled = false;
-    elements.writeConfigBtn.disabled = false;
 }
 
-async function addHostsEntries() {
-    clearAlerts(elements.hostsAlerts);
-    
-    if (currentConfig.mappings.length === 0) {
-        showAlert(elements.hostsAlerts, 'No mappings configured. Please configure mappings first.', 'error');
-        return;
-    }
-    
-    try {
-        elements.addHostsBtn.disabled = true;
-        elements.addHostsBtn.textContent = '📝 Adding...';
-        
-        const result = await window.electronAPI.updateHosts(currentConfig.mappings, 'add');
-        
-        if (result.success) {
-            showAlert(elements.hostsAlerts, result.message || 'Hosts entries added successfully!', 'success');
-        } else {
-            showAlert(elements.hostsAlerts, 'Failed to add hosts entries: ' + result.error, 'error');
-        }
-    } catch (error) {
-        console.error('Failed to add hosts entries:', error);
-        showAlert(elements.hostsAlerts, 'Failed to add hosts entries: ' + error.message, 'error');
-    }
-    
-    elements.addHostsBtn.disabled = false;
-    elements.addHostsBtn.textContent = '📝 Update /etc/hosts';
-}
-
-async function removeHostsEntries() {
+// Hosts file viewer
+async function viewHostsFile() {
     clearAlerts(elements.hostsAlerts);
     
     try {
-        elements.removeHostsBtn.disabled = true;
-        elements.removeHostsBtn.textContent = '🗑️ Removing...';
+        elements.viewHostsBtn.disabled = true;
+        elements.viewHostsBtn.textContent = '📄 Loading...';
         
-        const result = await window.electronAPI.updateHosts(currentConfig.mappings, 'remove');
-        
-        if (result.success) {
-            showAlert(elements.hostsAlerts, result.message || 'Hosts entries removed successfully!', 'success');
-        } else {
-            showAlert(elements.hostsAlerts, 'Failed to remove hosts entries: ' + result.error, 'error');
-        }
-    } catch (error) {
-        console.error('Failed to remove hosts entries:', error);
-        showAlert(elements.hostsAlerts, 'Failed to remove hosts entries: ' + error.message, 'error');
-    }
-    
-    elements.removeHostsBtn.disabled = false;
-    elements.removeHostsBtn.textContent = '🗑️ Remove Hosts Entries';
-}
-
-// Nginx config management
-async function writeNginxConfig() {
-    clearAlerts(elements.hostsAlerts);
-    
-    if (currentConfig.mappings.length === 0) {
-        showAlert(elements.hostsAlerts, 'No mappings configured. Please configure mappings first.', 'error');
-        return;
-    }
-    
-    try {
-        elements.writeConfigBtn.disabled = true;
-        elements.writeConfigBtn.textContent = '⚙️ Writing...';
-        
-        const result = await window.electronAPI.writeNginxConfig(currentConfig.mappings);
+        const result = await window.electronAPI.readHostsFile();
         
         if (result.success) {
-            showAlert(elements.hostsAlerts, `Nginx config written to ${result.path}`, 'success');
+            elements.hostsFileText.textContent = result.content;
+            elements.hostsFileContent.style.display = 'block';
+            showAlert(elements.hostsAlerts, 'Hosts file loaded successfully!', 'success');
         } else {
-            showAlert(elements.hostsAlerts, 'Failed to write nginx config: ' + result.error, 'error');
+            showAlert(elements.hostsAlerts, 'Failed to read hosts file: ' + result.error, 'error');
         }
     } catch (error) {
-        console.error('Failed to write nginx config:', error);
-        showAlert(elements.hostsAlerts, 'Failed to write nginx config: ' + error.message, 'error');
+        console.error('Failed to read hosts file:', error);
+        showAlert(elements.hostsAlerts, 'Failed to read hosts file: ' + error.message, 'error');
+    } finally {
+        elements.viewHostsBtn.disabled = false;
+        elements.viewHostsBtn.textContent = '📄 View /etc/hosts File';
     }
-    
-    elements.writeConfigBtn.disabled = false;
-    elements.writeConfigBtn.textContent = '⚙️ Write Nginx Config';
 }
 
 // Sudoers management
@@ -533,9 +472,7 @@ function initializeEventListeners() {
     elements.resetConfigBtn.addEventListener('click', resetConfiguration);
     
     // Hosts management
-    elements.addHostsBtn.addEventListener('click', addHostsEntries);
-    elements.removeHostsBtn.addEventListener('click', removeHostsEntries);
-    elements.writeConfigBtn.addEventListener('click', writeNginxConfig);
+    elements.viewHostsBtn.addEventListener('click', viewHostsFile);
     
     // Sudoers management
     elements.setupSudoersBtn.addEventListener('click', setupSudoers);

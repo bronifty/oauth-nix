@@ -547,6 +547,19 @@ fi`;
     ipcMain.handle('remove-hosts-sudoers', async () => {
       return await this.removeHostsSudoers();
     });
+
+    ipcMain.handle('read-hosts-file', async () => {
+      return await this.readHostsFile();
+    });
+  }
+
+  async readHostsFile() {
+    try {
+      const hostsContent = await fs.readFile('/etc/hosts', 'utf8');
+      return { success: true, content: hostsContent };
+    } catch (error) {
+      return { success: false, error: `Failed to read hosts file: ${error.message}` };
+    }
   }
 }
 

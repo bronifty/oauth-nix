@@ -443,13 +443,16 @@
                         <p>Loading preview...</p>
                     </div>
                     
-                    <h3>Actions</h3>
-                    <p>These operations will modify your /etc/hosts file and require administrator privileges.</p>
+                    <h3>Current /etc/hosts File</h3>
+                    <p>View the current contents of your system's hosts file.</p>
                     
                     <div class="control-buttons">
-                        <button class="btn btn-primary" id="addHostsBtn">📝 Update /etc/hosts</button>
-                        <button class="btn btn-danger" id="removeHostsBtn">🗑️ Remove from /etc/hosts</button>
-                        <button class="btn btn-secondary" id="writeConfigBtn">⚙️ Write Nginx Config</button>
+                        <button class="btn btn-secondary" id="viewHostsBtn">📄 View /etc/hosts File</button>
+                    </div>
+                    
+                    <div id="hostsFileContent" style="display: none;">
+                        <h4 style="margin: 20px 0 10px 0;">Hosts File Contents:</h4>
+                        <pre id="hostsFileText" style="background: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px solid #e9ecef; font-family: 'Monaco', 'Menlo', monospace; font-size: 12px; max-height: 300px; overflow-y: auto; white-space: pre-wrap; word-wrap: break-word;">Loading...</pre>
                     </div>
                 </div>
                 

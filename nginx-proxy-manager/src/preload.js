@@ -16,5 +16,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   showMessage: (options) => ipcRenderer.invoke('show-message', options),
   setupHostsSudoers: () => ipcRenderer.invoke('setup-hosts-sudoers'),
   checkHostsSudoers: () => ipcRenderer.invoke('check-hosts-sudoers'),
-  removeHostsSudoers: () => ipcRenderer.invoke('remove-hosts-sudoers')
+  removeHostsSudoers: () => ipcRenderer.invoke('remove-hosts-sudoers'),
+  readHostsFile: () => ipcRenderer.invoke('read-hosts-file')
 });

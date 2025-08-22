@@ -452,6 +452,20 @@
                         <button class="btn btn-secondary" id="writeConfigBtn">⚙️ Write Nginx Config</button>
                     </div>
                 </div>
+                
+                <div class="mapping-form">
+                    <h3>Passwordless Setup</h3>
+                    <p>Configure passwordless sudo for hosts file management to avoid entering your password repeatedly.</p>
+                    
+                    <div id="sudoersStatus">
+                        <p>Checking sudoers configuration...</p>
+                    </div>
+                    
+                    <div class="control-buttons">
+                        <button class="btn btn-primary" id="setupSudoersBtn">🔐 Setup Passwordless Mode</button>
+                        <button class="btn btn-danger" id="removeSudoersBtn">❌ Remove Passwordless Mode</button>
+                    </div>
+                </div>
 
                 <div class="help-text">
                     <h4>About Hosts File</h4>

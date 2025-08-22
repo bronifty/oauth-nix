@@ -13,5 +13,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   updateHosts: (mappings, action) => ipcRenderer.invoke('update-hosts', mappings, action),
   writeNginxConfig: (mappings) => ipcRenderer.invoke('write-nginx-config', mappings),
   showError: (title, message) => ipcRenderer.invoke('show-error', title, message),
-  showMessage: (options) => ipcRenderer.invoke('show-message', options)
+  showMessage: (options) => ipcRenderer.invoke('show-message', options),
+  setupHostsSudoers: () => ipcRenderer.invoke('setup-hosts-sudoers'),
+  checkHostsSudoers: () => ipcRenderer.invoke('check-hosts-sudoers'),
+  removeHostsSudoers: () => ipcRenderer.invoke('remove-hosts-sudoers')
 });

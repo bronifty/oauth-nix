@@ -204,28 +204,39 @@ skip==0 { print }
   }
 
   async startNginx(config) {
-    if (this.nginxProcess) {
-      return { success: false, error: 'Nginx is already running' };
-    }
-
     try {
+      // First check if nginx is already running
+      const status = await this.getNginxStatus();
+      if (status.running) {
+        return { 
+          success: false, 
+          error: 'Nginx is already running on port 80. Use the Stop button first if you want to restart with new configuration.' 
+        };
+      }
+
       // Generate and write nginx config file
       const configResult = await this.writeNginxConfig(config.mappings);
       if (!configResult.success) {
         return { success: false, error: `Failed to write nginx config: ${configResult.error}` };
       }
 
-      // Don't automatically update hosts file - let user do it manually in hosts tab
-      // This avoids the sudo prompt during nginx startup
-
       // Start nginx using Nix from the OAuth project directory
       const oauthProjectPath = '/Users/brotherniftymacbookair/codes/oauth';
       const nixCommand = `cd "${oauthProjectPath}" && nix run . -- start`;
       
       return new Promise((resolve) => {
-        exec(nixCommand, (error, stdout, stderr) => {
+        exec(nixCommand, { timeout: 30000 }, (error, stdout, stderr) => {
           if (error) {
-            resolve({ success: false, error: error.message, output: stderr });
+            // Check if it's a port binding error
+            if (stderr && stderr.includes('Address already in use')) {
+              resolve({ 
+                success: false, 
+                error: 'Port 80 is already in use by another process. Please stop other web servers or nginx instances first.',
+                output: stderr 
+              });
+            } else {
+              resolve({ success: false, error: error.message, output: stderr });
+            }
           } else {
             resolve({ 
               success: true, 
@@ -262,17 +273,41 @@ skip==0 { print }
 
   async getNginxStatus() {
     try {
+      // Check both the Nix status and direct port check
       const oauthProjectPath = '/Users/brotherniftymacbookair/codes/oauth';
       const nixCommand = `cd "${oauthProjectPath}" && nix run . -- status`;
       
       return new Promise((resolve) => {
-        exec(nixCommand, (error, stdout, stderr) => {
-          const isRunning = !error && stdout.includes('Nginx proxy is running');
-          resolve({
-            success: true,
-            running: isRunning,
-            output: stdout || stderr,
-            error: error ? error.message : null
+        // First check Nix status
+        exec(nixCommand, (nixError, nixStdout, nixStderr) => {
+          const nixRunning = !nixError && nixStdout.includes('Nginx proxy is running');
+          
+          // Also check if nginx is actually running on port 80
+          exec('lsof -i :80 | grep nginx', (lsofError, lsofStdout) => {
+            const portRunning = !lsofError && lsofStdout.trim().length > 0;
+            
+            // If either method detects nginx running, consider it running
+            const isRunning = nixRunning || portRunning;
+            
+            let statusMessage = '';
+            if (nixRunning && portRunning) {
+              statusMessage = 'Nginx proxy is running properly';
+            } else if (portRunning && !nixRunning) {
+              statusMessage = 'Nginx is running on port 80 (may not be managed by this app)';
+            } else if (nixRunning && !portRunning) {
+              statusMessage = 'Nix reports nginx running but port 80 is not bound';
+            } else {
+              statusMessage = 'Nginx proxy is not running';
+            }
+            
+            resolve({
+              success: true,
+              running: isRunning,
+              output: statusMessage,
+              nixOutput: nixStdout || nixStderr,
+              portBound: portRunning,
+              error: nixError ? nixError.message : null
+            });
           });
         });
       });
@@ -295,15 +330,109 @@ skip==0 { print }
         return { success: false, error: `Failed to write nginx config: ${configResult.error}` };
       }
 
-      // Don't automatically restart nginx - let the user control that
+      // Automatically update hosts file when configuration changes
+      const hostsResult = await this.updateHostsFile(config.mappings, 'add');
+      let hostsMessage = '';
+      if (hostsResult.success) {
+        hostsMessage = ' Hosts file updated.';
+      } else if (!hostsResult.error.includes('User canceled')) {
+        // Don't fail the entire operation if hosts update fails, but mention it
+        hostsMessage = ` (Note: Hosts file update failed: ${hostsResult.error})`;
+      } else {
+        hostsMessage = ' (Hosts file update cancelled by user.)';
+      }
+
       return { 
         success: true, 
-        message: `Configuration saved and nginx config updated. If nginx is running, restart it to apply changes.`,
+        message: `Configuration saved and nginx config updated.${hostsMessage} If nginx is running, restart it to apply changes.`,
         needsRestart: true
       };
     } catch (error) {
       return { success: false, error: error.message };
     }
+  }
+
+  async setupHostsSudoers() {
+    const username = os.userInfo().username;
+    const sudoersContent = `# Allow ${username} passwordless hosts file management for nginx-proxy-manager
+${username} ALL=(ALL) NOPASSWD: /usr/bin/tee -a /etc/hosts
+${username} ALL=(ALL) NOPASSWD: /bin/cp /etc/hosts /etc/hosts.backup*
+${username} ALL=(ALL) NOPASSWD: /bin/cp /tmp/hosts_cleaned /etc/hosts
+${username} ALL=(ALL) NOPASSWD: /usr/bin/awk * /etc/hosts
+${username} ALL=(ALL) NOPASSWD: /bin/bash /tmp/nginx-proxy-cleanup.sh`;
+    
+    return new Promise(async (resolve) => {
+      try {
+        // Create temp sudoers file
+        const tempSudoersFile = '/tmp/nginx-proxy-manager-hosts-sudoers';
+        await fs.writeFile(tempSudoersFile, sudoersContent);
+        
+        // Check if sudoers rule already exists
+        const sudoersFile = '/etc/sudoers.d/nginx-proxy-manager-hosts';
+        
+        const setupCommand = `
+          if [ -f "${sudoersFile}" ]; then
+            echo "Sudoers rule already exists"
+          else
+            # Validate syntax first
+            if visudo -c -f ${tempSudoersFile} >/dev/null 2>&1; then
+              cp ${tempSudoersFile} ${sudoersFile}
+              chmod 0440 ${sudoersFile}
+              echo "Sudoers rule created successfully"
+            else
+              echo "Error: Invalid sudoers syntax" >&2
+              exit 1
+            fi
+          fi
+        `;
+        
+        const applescriptCommand = `osascript -e 'do shell script "${setupCommand}" with administrator privileges'`;
+        
+        exec(applescriptCommand, { timeout: 30000 }, (error, stdout, stderr) => {
+          // Clean up temp file
+          fs.unlink(tempSudoersFile).catch(() => {});
+          
+          if (error) {
+            if (error.message.includes('User canceled')) {
+              resolve({ success: false, error: 'Setup cancelled by user' });
+            } else {
+              resolve({ success: false, error: `Failed to setup sudoers: ${error.message}` });
+            }
+          } else {
+            resolve({ success: true, message: 'Passwordless hosts file management configured' });
+          }
+        });
+      } catch (error) {
+        resolve({ success: false, error: `Failed to setup sudoers: ${error.message}` });
+      }
+    });
+  }
+
+  async checkHostsSudoersSetup() {
+    try {
+      await fs.access('/etc/sudoers.d/nginx-proxy-manager-hosts');
+      return { configured: true };
+    } catch (error) {
+      return { configured: false };
+    }
+  }
+
+  async removeHostsSudoers() {
+    return new Promise((resolve) => {
+      const applescriptCommand = `osascript -e 'do shell script "rm -f /etc/sudoers.d/nginx-proxy-manager-hosts" with administrator privileges'`;
+      
+      exec(applescriptCommand, { timeout: 30000 }, (error, stdout, stderr) => {
+        if (error) {
+          if (error.message.includes('User canceled')) {
+            resolve({ success: false, error: 'Removal cancelled by user' });
+          } else {
+            resolve({ success: false, error: `Failed to remove sudoers: ${error.message}` });
+          }
+        } else {
+          resolve({ success: true, message: 'Hosts file sudoers configuration removed' });
+        }
+      });
+    });
   }
 
   setupIPC() {
@@ -368,6 +497,18 @@ skip==0 { print }
     ipcMain.handle('show-message', async (event, options) => {
       const result = await dialog.showMessageBox(this.window, options);
       return result;
+    });
+
+    ipcMain.handle('setup-hosts-sudoers', async () => {
+      return await this.setupHostsSudoers();
+    });
+
+    ipcMain.handle('check-hosts-sudoers', async () => {
+      return await this.checkHostsSudoersSetup();
+    });
+
+    ipcMain.handle('remove-hosts-sudoers', async () => {
+      return await this.removeHostsSudoers();
     });
   }
 }

@@ -1,0 +1,5 @@
+
+> nginx-proxy-manager@1.0.0 dev
+> electron . --dev
+
+/Users/brotherniftymacbookair/codes/oauth/nginx-proxy-manager/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron exited with signal SIGTERM

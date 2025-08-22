@@ -32,7 +32,12 @@ const elements = {
     removeHostsBtn: document.getElementById('removeHostsBtn'),
     writeConfigBtn: document.getElementById('writeConfigBtn'),
     hostsPreview: document.getElementById('hostsPreview'),
-    hostsAlerts: document.getElementById('hostsAlerts')
+    hostsAlerts: document.getElementById('hostsAlerts'),
+    
+    // Sudoers management
+    setupSudoersBtn: document.getElementById('setupSudoersBtn'),
+    removeSudoersBtn: document.getElementById('removeSudoersBtn'),
+    sudoersStatus: document.getElementById('sudoersStatus')
 };
 
 // Utility functions
@@ -88,6 +93,7 @@ function showSection(sectionId) {
             loadConfiguration();
         } else if (sectionId === 'hosts') {
             updateHostsPreview();
+            updateSudoersStatus();
         }
     }
 }
@@ -435,6 +441,82 @@ async function writeNginxConfig() {
     elements.writeConfigBtn.textContent = '⚙️ Write Nginx Config';
 }
 
+// Sudoers management
+async function updateSudoersStatus() {
+    try {
+        const result = await window.electronAPI.checkHostsSudoers();
+        
+        if (result.configured) {
+            elements.sudoersStatus.innerHTML = `
+                <div class="alert alert-success">
+                    ✅ Passwordless mode is configured. You won't need to enter your password for hosts file operations.
+                </div>
+            `;
+            elements.setupSudoersBtn.disabled = true;
+            elements.removeSudoersBtn.disabled = false;
+        } else {
+            elements.sudoersStatus.innerHTML = `
+                <div class="alert alert-info">
+                    🔐 Passwordless mode is not configured. You'll need to enter your password for hosts file operations.
+                </div>
+            `;
+            elements.setupSudoersBtn.disabled = false;
+            elements.removeSudoersBtn.disabled = true;
+        }
+    } catch (error) {
+        console.error('Failed to check sudoers status:', error);
+        elements.sudoersStatus.innerHTML = `
+            <div class="alert alert-error">
+                ❌ Failed to check sudoers configuration: ${error.message}
+            </div>
+        `;
+    }
+}
+
+async function setupSudoers() {
+    try {
+        elements.setupSudoersBtn.disabled = true;
+        elements.setupSudoersBtn.textContent = '🔐 Setting up...';
+        
+        const result = await window.electronAPI.setupHostsSudoers();
+        
+        if (result.success) {
+            showAlert(elements.hostsAlerts, result.message, 'success');
+            updateSudoersStatus();
+        } else {
+            showAlert(elements.hostsAlerts, 'Failed to setup passwordless mode: ' + result.error, 'error');
+        }
+    } catch (error) {
+        console.error('Failed to setup sudoers:', error);
+        showAlert(elements.hostsAlerts, 'Failed to setup passwordless mode: ' + error.message, 'error');
+    } finally {
+        elements.setupSudoersBtn.disabled = false;
+        elements.setupSudoersBtn.textContent = '🔐 Setup Passwordless Mode';
+    }
+}
+
+async function removeSudoers() {
+    try {
+        elements.removeSudoersBtn.disabled = true;
+        elements.removeSudoersBtn.textContent = '❌ Removing...';
+        
+        const result = await window.electronAPI.removeHostsSudoers();
+        
+        if (result.success) {
+            showAlert(elements.hostsAlerts, result.message, 'success');
+            updateSudoersStatus();
+        } else {
+            showAlert(elements.hostsAlerts, 'Failed to remove passwordless mode: ' + result.error, 'error');
+        }
+    } catch (error) {
+        console.error('Failed to remove sudoers:', error);
+        showAlert(elements.hostsAlerts, 'Failed to remove passwordless mode: ' + error.message, 'error');
+    } finally {
+        elements.removeSudoersBtn.disabled = false;
+        elements.removeSudoersBtn.textContent = '❌ Remove Passwordless Mode';
+    }
+}
+
 // Global functions (for onclick handlers)
 window.removeMapping = removeMapping;
 
@@ -454,6 +536,10 @@ function initializeEventListeners() {
     elements.addHostsBtn.addEventListener('click', addHostsEntries);
     elements.removeHostsBtn.addEventListener('click', removeHostsEntries);
     elements.writeConfigBtn.addEventListener('click', writeNginxConfig);
+    
+    // Sudoers management
+    elements.setupSudoersBtn.addEventListener('click', setupSudoers);
+    elements.removeSudoersBtn.addEventListener('click', removeSudoers);
 }
 
 // Initialize the application

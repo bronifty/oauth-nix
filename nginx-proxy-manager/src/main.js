@@ -125,25 +125,33 @@ http {
         // First, remove any existing entries (but don't fail if there aren't any)
         await this.removeHostsEntries();
         
-        // Create a temporary file with the entries and use osascript for sudo
+        // Create a temporary file with the entries and try passwordless sudo first
         const tempFile = '/tmp/nginx-proxy-manager-hosts.txt';
         await fs.writeFile(tempFile, `\n${entriesText}\n`);
         
-        const applescriptCommand = `osascript -e 'do shell script "cat ${tempFile} >> /etc/hosts" with administrator privileges'`;
-        
         return new Promise((resolve) => {
-          exec(applescriptCommand, { timeout: 30000 }, (error, stdout, stderr) => {
+          // Try passwordless sudo with tee first
+          exec(`cat ${tempFile} | sudo tee -a /etc/hosts`, { timeout: 30000 }, (error, stdout, stderr) => {
             // Clean up temp file
             fs.unlink(tempFile).catch(() => {});
             
             if (error) {
-              if (error.message.includes('User canceled')) {
-                resolve({ success: false, error: 'Operation cancelled by user' });
-              } else {
-                resolve({ success: false, error: `Failed to add hosts entries: ${error.message}` });
-              }
+              // If passwordless sudo failed, fall back to AppleScript
+              const applescriptCommand = `osascript -e 'do shell script "cat ${tempFile} >> /etc/hosts" with administrator privileges'`;
+              
+              exec(applescriptCommand, { timeout: 30000 }, (fallbackError, fallbackStdout, fallbackStderr) => {
+                if (fallbackError) {
+                  if (fallbackError.message.includes('User canceled')) {
+                    resolve({ success: false, error: 'Operation cancelled by user' });
+                  } else {
+                    resolve({ success: false, error: `Failed to add hosts entries: ${fallbackError.message}` });
+                  }
+                } else {
+                  resolve({ success: true, message: 'Hosts entries updated successfully (with password)' });
+                }
+              });
             } else {
-              resolve({ success: true, message: 'Hosts entries updated successfully' });
+              resolve({ success: true, message: 'Hosts entries updated successfully (passwordless)' });
             }
           });
         });
@@ -172,18 +180,26 @@ skip==0 { print }
         const tempScript = '/tmp/nginx-proxy-cleanup.sh';
         await fs.writeFile(tempScript, cleanupScript);
         
-        const applescriptCommand = `osascript -e 'do shell script "bash ${tempScript}" with administrator privileges'`;
-        
-        exec(applescriptCommand, { timeout: 30000 }, (error, stdout, stderr) => {
+        // Try passwordless sudo first
+        exec(`sudo bash ${tempScript}`, { timeout: 30000 }, (error, stdout, stderr) => {
           // Clean up temp script
           fs.unlink(tempScript).catch(() => {});
           fs.unlink('/tmp/hosts_cleaned').catch(() => {});
           
-          if (error && !error.message.includes('User canceled')) {
-            // Don't treat this as an error if the entries don't exist or user cancels
-            resolve({ success: true, message: 'Hosts entries cleanup completed' });
+          if (error) {
+            // If passwordless sudo failed, fall back to AppleScript
+            const applescriptCommand = `osascript -e 'do shell script "bash ${tempScript}" with administrator privileges'`;
+            
+            exec(applescriptCommand, { timeout: 30000 }, (fallbackError, fallbackStdout, fallbackStderr) => {
+              if (fallbackError && !fallbackError.message.includes('User canceled')) {
+                // Don't treat this as an error if the entries don't exist or user cancels
+                resolve({ success: true, message: 'Hosts entries cleanup completed' });
+              } else {
+                resolve({ success: true, message: 'Hosts entries removed successfully (with password)' });
+              }
+            });
           } else {
-            resolve({ success: true, message: 'Hosts entries removed successfully' });
+            resolve({ success: true, message: 'Hosts entries removed successfully (passwordless)' });
           }
         });
       } catch (error) {
@@ -226,7 +242,15 @@ skip==0 { print }
       
       return new Promise((resolve) => {
         exec(nixCommand, { timeout: 30000 }, (error, stdout, stderr) => {
-          if (error) {
+          // Check if it's actually a critical error or just nginx startup warnings
+          const hasRealError = error && (
+            stderr.includes('Address already in use') ||
+            stderr.includes('bind() to') ||
+            stderr.includes('Permission denied') ||
+            (error.code !== 0 && !stderr.includes('could not open error log file'))
+          );
+          
+          if (hasRealError) {
             // Check if it's a port binding error
             if (stderr && stderr.includes('Address already in use')) {
               resolve({ 
@@ -238,10 +262,17 @@ skip==0 { print }
               resolve({ success: false, error: error.message, output: stderr });
             }
           } else {
+            // Nginx started successfully, treat stderr as informational
+            let message = 'Nginx started successfully.';
+            if (stderr && stderr.includes('could not open error log file')) {
+              message += ' (Note: Using stderr for error logging instead of /var/log/nginx/error.log)';
+            }
+            
             resolve({ 
               success: true, 
-              message: 'Nginx started successfully. Remember to update /etc/hosts in the Hosts Management tab if needed.',
-              output: stdout 
+              message: message,
+              output: stdout,
+              warnings: stderr || null
             });
           }
         });
@@ -355,11 +386,11 @@ skip==0 { print }
   async setupHostsSudoers() {
     const username = os.userInfo().username;
     const sudoersContent = `# Allow ${username} passwordless hosts file management for nginx-proxy-manager
-${username} ALL=(ALL) NOPASSWD: /usr/bin/tee -a /etc/hosts
+${username} ALL=(ALL) NOPASSWD: /bin/cat /tmp/nginx-proxy-manager-hosts.txt
 ${username} ALL=(ALL) NOPASSWD: /bin/cp /etc/hosts /etc/hosts.backup*
 ${username} ALL=(ALL) NOPASSWD: /bin/cp /tmp/hosts_cleaned /etc/hosts
-${username} ALL=(ALL) NOPASSWD: /usr/bin/awk * /etc/hosts
-${username} ALL=(ALL) NOPASSWD: /bin/bash /tmp/nginx-proxy-cleanup.sh`;
+${username} ALL=(ALL) NOPASSWD: /bin/bash /tmp/nginx-proxy-cleanup.sh
+${username} ALL=(ALL) NOPASSWD: /usr/bin/tee -a /etc/hosts`;
     
     return new Promise(async (resolve) => {
       try {
@@ -367,30 +398,36 @@ ${username} ALL=(ALL) NOPASSWD: /bin/bash /tmp/nginx-proxy-cleanup.sh`;
         const tempSudoersFile = '/tmp/nginx-proxy-manager-hosts-sudoers';
         await fs.writeFile(tempSudoersFile, sudoersContent);
         
-        // Check if sudoers rule already exists
-        const sudoersFile = '/etc/sudoers.d/nginx-proxy-manager-hosts';
+        // Create a simpler shell script to do the work
+        const setupScript = `#!/bin/bash
+SUDOERS_FILE="/etc/sudoers.d/nginx-proxy-manager-hosts"
+TEMP_FILE="${tempSudoersFile}"
+
+if [ -f "$SUDOERS_FILE" ]; then
+  echo "Sudoers rule already exists"
+  exit 0
+fi
+
+# Validate syntax first
+if visudo -c -f "$TEMP_FILE" >/dev/null 2>&1; then
+  cp "$TEMP_FILE" "$SUDOERS_FILE"
+  chmod 0440 "$SUDOERS_FILE"
+  echo "Sudoers rule created successfully"
+else
+  echo "Error: Invalid sudoers syntax" >&2
+  exit 1
+fi`;
         
-        const setupCommand = `
-          if [ -f "${sudoersFile}" ]; then
-            echo "Sudoers rule already exists"
-          else
-            # Validate syntax first
-            if visudo -c -f ${tempSudoersFile} >/dev/null 2>&1; then
-              cp ${tempSudoersFile} ${sudoersFile}
-              chmod 0440 ${sudoersFile}
-              echo "Sudoers rule created successfully"
-            else
-              echo "Error: Invalid sudoers syntax" >&2
-              exit 1
-            fi
-          fi
-        `;
+        const tempScript = '/tmp/nginx-proxy-sudoers-setup.sh';
+        await fs.writeFile(tempScript, setupScript);
         
-        const applescriptCommand = `osascript -e 'do shell script "${setupCommand}" with administrator privileges'`;
+        // Use osascript with a simpler command
+        const applescriptCommand = `osascript -e 'do shell script "bash ${tempScript}" with administrator privileges'`;
         
         exec(applescriptCommand, { timeout: 30000 }, (error, stdout, stderr) => {
-          // Clean up temp file
+          // Clean up temp files
           fs.unlink(tempSudoersFile).catch(() => {});
+          fs.unlink(tempScript).catch(() => {});
           
           if (error) {
             if (error.message.includes('User canceled')) {
